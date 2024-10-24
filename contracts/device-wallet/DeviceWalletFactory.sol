@@ -46,6 +46,9 @@ contract DeviceWalletFactory is Initializable, OwnableUpgradeable {
     /// @notice Emitted when the newly requested admin accepts the role
     event AdminUpdated(address indexed _newAdmin);
 
+    /// @notice Emitted when the device wallet implementation is updated
+    event DeviceWalletImplementationUpdated(address indexed _newDeviceImplementation);
+
     IEntryPoint public immutable entryPoint;
 
     P256Verifier public immutable verifier;
@@ -57,7 +60,7 @@ contract DeviceWalletFactory is Initializable, OwnableUpgradeable {
     address public vault;
 
     /// @notice Implementation (logic) contract address of the device wallet
-    DeviceWallet public deviceWalletImplementation;
+    address public deviceWalletImplementation;
 
     /// @notice Beacon contract address for this contract
     address public beacon;
@@ -88,7 +91,7 @@ contract DeviceWalletFactory is Initializable, OwnableUpgradeable {
         verifier = _verifier;
 
         // device wallet implementation (logic) contract
-        deviceWalletImplementation = new DeviceWallet(_entryPoint, _verifier);
+        deviceWalletImplementation = address(new DeviceWallet(_entryPoint, _verifier));
         _disableInitializers();
     }
 
@@ -116,13 +119,13 @@ contract DeviceWalletFactory is Initializable, OwnableUpgradeable {
         registry = Registry(_registryContractAddress);
 
         // Upgradable beacon for device wallet implementation contract
-        beacon = address(new UpgradeableBeacon(address(deviceWalletImplementation), _upgradeManager));
+        beacon = address(new UpgradeableBeacon(deviceWalletImplementation, _upgradeManager));
 
         emit DeviceWalletFactoryDeployed(
             _eSIMWalletAdmin,
             _vault,
             _upgradeManager,
-            address(deviceWalletImplementation),
+            deviceWalletImplementation,
             beacon
         );
         
@@ -167,6 +170,21 @@ contract DeviceWalletFactory is Initializable, OwnableUpgradeable {
         newRequestedAdmin = address(0);
 
         return eSIMWalletAdmin;
+    }
+
+    /// @notice Function to update the device wallet implementation
+    /// @param _newDeviceImpl Address of the new device implementation contract
+    function updateDeviceWalletImplementation(
+        address _newDeviceImpl
+    ) external onlyAdmin returns (address) {
+        require(_newDeviceImpl != address(0), "_newDeviceImpl 0");
+        require(_newDeviceImpl != deviceWalletImplementation, "Existing implementation");
+
+        deviceWalletImplementation = _newDeviceImpl;
+
+        emit DeviceWalletImplementationUpdated(deviceWalletImplementation);
+
+        return deviceWalletImplementation;
     }
 
     /// @notice To deploy multiple device wallets at once
@@ -281,7 +299,7 @@ contract DeviceWalletFactory is Initializable, OwnableUpgradeable {
         deviceWallet = DeviceWallet(
             payable(
                 new ERC1967Proxy{salt : bytes32(_salt)}(
-                    address(deviceWalletImplementation),
+                    deviceWalletImplementation,
                     abi.encodeCall(
                         DeviceWallet.init, 
                         (address(registry), _deviceWalletOwnerKey, _deviceUniqueIdentifier)
@@ -308,7 +326,7 @@ contract DeviceWalletFactory is Initializable, OwnableUpgradeable {
                 abi.encodePacked(
                     type(ERC1967Proxy).creationCode,
                     abi.encode(
-                        address(deviceWalletImplementation),
+                        deviceWalletImplementation,
                         abi.encodeCall(
                             DeviceWallet.init,
                             (_registry, _deviceWalletOwnerKey, _deviceUniqueIdentifier)
